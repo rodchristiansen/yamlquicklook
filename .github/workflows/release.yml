@@ -2,8 +2,8 @@ name: Build and Release
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+    tags: [ 'v*' ]
   workflow_dispatch:
 
 permissions:
@@ -12,24 +12,23 @@ permissions:
 jobs:
   build:
     runs-on: macos-15
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Verify Xcode version
+    - name: Select Xcode
       run: |
+        sudo xcode-select -s /Applications/Xcode_16.2.app
         xcodebuild -version
-        xcrun --show-sdk-path
 
-    - name: Build application
+    - name: Generate version number
+      id: version
       run: |
-        xcodebuild -scheme YamlQuickLook \
-          -configuration Release \
-          -derivedDataPath build \
-          CODE_SIGN_IDENTITY="-" \
-          CODE_SIGNING_REQUIRED=NO \
-          clean build
+        export TZ=America/Vancouver
+        VERSION=$(date +'%Y.%m.%d')
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Generated version: $VERSION"
 
     - name: Run tests
       run: |
@@ -39,91 +38,95 @@ jobs:
           CODE_SIGNING_REQUIRED=NO \
           test
 
+    - name: Build release
+      run: |
+        xcodebuild -scheme YamlQuickLook \
+          -configuration Release \
+          -derivedDataPath build \
+          CODE_SIGN_IDENTITY="-" \
+          CODE_SIGNING_REQUIRED=NO \
+          clean build
+
+    - name: Verify app bundle
+      run: |
+        ls -la build/Build/Products/Release/YamlQuickLook.app/
+        ls -la build/Build/Products/Release/YamlQuickLook.app/Contents/PlugIns/
+
     - name: Create release artifact
       run: |
         cd build/Build/Products/Release
-        zip -r yamlQuickLook.zip YamlQuickLook.app
-        mv yamlQuickLook.zip $GITHUB_WORKSPACE/
+        ditto -c -k --keepParent YamlQuickLook.app \
+          "$GITHUB_WORKSPACE/YamlQuickLook-${{ steps.version.outputs.version }}.zip"
 
-    - name: Generate version from timestamp
-      id: version
+    - name: Check and create daily tag
+      id: daily_tag
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       run: |
-        VERSION=$(date -u +"%Y.%m.%d")
-        # Append run number to avoid tag collisions on same-day builds
-        TAG="${VERSION}-${GITHUB_RUN_NUMBER}"
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "tag=$TAG" >> $GITHUB_OUTPUT
-        echo "Generated version: $VERSION (tag: $TAG)"
+        export TZ=America/Vancouver
+        DAILY_TAG="${{ steps.version.outputs.version }}"
+        echo "daily_tag=$DAILY_TAG" >> $GITHUB_OUTPUT
+
+        if git tag -l "$DAILY_TAG" | grep -q "$DAILY_TAG"; then
+          echo "Tag $DAILY_TAG already exists, skipping release"
+          echo "should_release=false" >> $GITHUB_OUTPUT
+        else
+          echo "Creating new tag $DAILY_TAG"
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag "$DAILY_TAG"
+          git push origin "$DAILY_TAG"
+          echo "should_release=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: YamlQuickLook-${{ steps.version.outputs.version }}
+        path: YamlQuickLook-${{ steps.version.outputs.version }}.zip
+
+    - name: Generate release notes
+      if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/') || (github.ref == 'refs/heads/main' && steps.daily_tag.outputs.should_release == 'true'))
+      id: release_notes
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        LAST_TAG=$(git tag --sort=-creatordate | grep -v "$VERSION" | head -n 1 || echo "")
+
+        if [ -z "$LAST_TAG" ]; then
+          COMMITS=$(git log --pretty=format:"- %s (%h)" -10)
+        else
+          COMMITS=$(git log "${LAST_TAG}..HEAD" --pretty=format:"- %s (%h)")
+        fi
+
+        cat > release_notes.md << EOF
+        ${COMMITS}
+
+        ---
+        ### Installation
+
+        1. Download \`YamlQuickLook-${VERSION}.zip\`
+        2. Unzip and move \`YamlQuickLook.app\` to \`/Applications\`
+        3. Open the app once to register the extension
+        4. Enable in System Settings > Privacy & Security > Extensions > Quick Look
+
+        This build is unsigned. Remove quarantine after installation:
+
+        \`\`\`bash
+        xattr -cr /Applications/YamlQuickLook.app
+        killall Finder && qlmanage -r && qlmanage -r cache
+        \`\`\`
+        EOF
+
+        echo "notes_file=release_notes.md" >> $GITHUB_OUTPUT
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: ${{ steps.version.outputs.tag }}
-        name: YAML Quick Look ${{ steps.version.outputs.version }}
-        body: |
-          A native macOS Quick Look extension for YAML files.
-          
-          ### Installation
-          1. Download `yamlQuickLook.zip`
-          2. Unzip and move `YamlQuickLook.app` to `/Applications`
-          3. Open the app once to register the extension
-          4. Enable the extension in System Settings > Privacy & Security > Extensions > Quick Look
-          
-          ### Important Note
-          This release is **not code-signed or notarized**. 
-          macOS Sequoia and later make it (rightly so) very difficult to open unsigned apps.
-          
-          You **must** remove the quarantine attribute after installation:
-          ```bash
-          xattr -cr /Applications/YamlQuickLook.app
-          ```
-          
-          Then restart Finder and QuickLook:
-          ```bash
-          killall Finder
-          qlmanage -r && qlmanage -r cache
-          ```
-          
-          ### Building with Code Signing and Notarization
-          
-          If you want to build a properly signed and notarized version:
-          
-          1. **Set up your Apple Developer credentials:**
-             - Enroll in the Apple Developer Program ($99/year)
-             - Create an App ID in your Apple Developer account
-             - Create an app-specific password for notarization at [appleid.apple.com](https://appleid.apple.com)
-          
-          2. **Build with code signing:**
-             ```bash
-             xcodebuild -scheme YamlQuickLook \
-               -configuration Release \
-               DEVELOPMENT_TEAM="YOUR_TEAM_ID" \
-               CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAM_ID)" \
-               clean build
-             ```
-          
-          3. **Notarize the app:**
-             ```bash
-             # Create a zip for notarization
-             ditto -c -k --keepParent YamlQuickLook.app YamlQuickLook.zip
-             
-             # Submit for notarization
-             xcrun notarytool submit YamlQuickLook.zip \
-               --apple-id "your@email.com" \
-               --team-id "YOUR_TEAM_ID" \
-               --password "app-specific-password" \
-               --wait
-             
-             # Staple the notarization ticket
-             xcrun stapler staple YamlQuickLook.app
-             ```
-          
-          4. **Verify:**
-             ```bash
-             spctl -a -vvv -t install YamlQuickLook.app
-             ```
-        files: yamlQuickLook.zip
-        draft: false
-        prerelease: false
+      if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/') || (github.ref == 'refs/heads/main' && steps.daily_tag.outputs.should_release == 'true'))
+      uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || steps.daily_tag.outputs.daily_tag }}
+        name: YAML Quick Look ${{ steps.version.outputs.version }}
+        body_path: release_notes.md
+        files: YamlQuickLook-${{ steps.version.outputs.version }}.zip
+        draft: false
+        prerelease: false
