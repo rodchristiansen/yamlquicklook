@@ -2,14 +2,13 @@ import AppKit
 import OSLog
 import QuickLookThumbnailing
 
-final class ThumbnailProvider: QLThumbnailProvider {
+final class ThumbnailProvider: QLThumbnailProvider, @unchecked Sendable {
     private let logger = Logger(subsystem: "com.yamlquicklook.YamlQuickLook", category: "thumbnail")
 
     override func provideThumbnail(for request: QLFileThumbnailRequest, _ handler: @escaping (QLThumbnailReply?, Error?) -> Void) {
         do {
-            let content = try String(contentsOf: request.fileURL, encoding: .utf8)
-            let reply = makeThumbnailReply(for: request, content: content)
-            handler(reply, nil)
+            let content = try YAMLFileReader.read(fileAt: request.fileURL).content
+            handler(makeThumbnailReply(for: request, content: content), nil)
         } catch {
             logger.error("Failed to read file for thumbnail: \(error.localizedDescription, privacy: .public)")
             handler(nil, error)
@@ -46,8 +45,8 @@ final class ThumbnailProvider: QLThumbnailProvider {
     }
 
     private func drawPlainPreview(in rect: CGRect, content: String) {
+        let snippet = YAMLFileReader.makeSnippet(from: content)
         let textRect = rect.insetBy(dx: 4, dy: 6)
-        let snippet = makeSnippet(from: content)
 
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
@@ -60,18 +59,5 @@ final class ThumbnailProvider: QLThumbnailProvider {
         ]
 
         NSAttributedString(string: snippet, attributes: attributes).draw(in: textRect)
-    }
-
-    private func makeSnippet(from content: String) -> String {
-        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lines = trimmed.split(separator: "\n", omittingEmptySubsequences: false)
-        let maxLines = 60
-
-        if lines.count <= maxLines {
-            return trimmed
-        }
-
-        let prefix = lines.prefix(maxLines).joined(separator: "\n")
-        return prefix + "\n..."
     }
 }
