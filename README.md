@@ -4,11 +4,11 @@ A native macOS Quick Look extension for previewing YAML files. Provides the same
 
 ## Features
 
-- Native plain-text Quick Look preview for YAML files
+- Native plain-text Quick Look preview for `.yaml` and `.yml` files
 - Scrollable content view for large files
-- Thumbnail generation for Finder icons
+- Thumbnail generation showing file content in Finder icons
 - Dark mode support
-- Supports `.yaml` and `.yml` file extensions
+- Lightweight container app with two system extensions
 
 ## Requirements
 
@@ -34,7 +34,7 @@ A native macOS Quick Look extension for previewing YAML files. Provides the same
    qlmanage -r && qlmanage -r cache
    ```
 
-**Important:** This app is not code-signed or notarized. macOS Sequoia and later require the `xattr` command above to run unsigned apps.
+**Important:** The GitHub Actions release is **not code-signed or notarized**. macOS Sequoia and later require the `xattr` command above to run unsigned apps. See [Building with Code Signing](#signing-with-your-developer-id) for a properly signed build.
 
 ### Option 2: Build from Source
 
@@ -46,13 +46,85 @@ See [Building from Source](#building-from-source) below.
 2. Press Space to preview with Quick Look
 3. Or view in Finder's preview pane (right sidebar)
 
+## Mac Admin Deployment
+
+### MDM Considerations
+
+- **Extension activation requires user interaction**: Users must enable the Quick Look extension in System Settings > Privacy & Security > Extensions > Quick Look. This step **cannot** be automated via MDM configuration profiles on macOS Sequoia and later.
+- **Quarantine removal**: If deploying an unsigned build, include `xattr -cr` in your post-install script.
+- **Recommended approach**: Build a signed and notarized version with your organization's Developer ID to avoid quarantine issues entirely.
+
+### Munki
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>name</key>
+    <string>YamlQuickLook</string>
+    <key>display_name</key>
+    <string>YAML Quick Look</string>
+    <key>description</key>
+    <string>Quick Look extension for previewing YAML files in Finder.</string>
+    <key>category</key>
+    <string>Utilities</string>
+    <key>developer</key>
+    <string>Rod Christiansen</string>
+    <key>installer_type</key>
+    <string>copy_from_dmg</string>
+    <key>installs</key>
+    <array>
+        <dict>
+            <key>CFBundleIdentifier</key>
+            <string>com.github.rodchristiansen.YamlQuickLook</string>
+            <key>path</key>
+            <string>/Applications/YamlQuickLook.app</string>
+            <key>type</key>
+            <string>application</string>
+        </dict>
+    </array>
+    <key>items_to_copy</key>
+    <array>
+        <dict>
+            <key>destination_path</key>
+            <string>/Applications</string>
+            <key>source_item</key>
+            <string>YamlQuickLook.app</string>
+        </dict>
+    </array>
+    <key>postinstall_script</key>
+    <string>#!/bin/bash
+# Register Quick Look extensions
+pluginkit -a /Applications/YamlQuickLook.app/Contents/PlugIns/YamlQuickLookExtension.appex || true
+pluginkit -a /Applications/YamlQuickLook.app/Contents/PlugIns/YamlQuickLookThumbnailExtension.appex || true
+qlmanage -r
+qlmanage -r cache
+    </string>
+</dict>
+</plist>
+```
+
+### Jamf Pro
+
+1. Package `YamlQuickLook.app` into a `.pkg` installer
+2. Upload to Jamf Pro and create a policy
+3. Add a post-install script:
+   ```bash
+   #!/bin/bash
+   pluginkit -a /Applications/YamlQuickLook.app/Contents/PlugIns/YamlQuickLookExtension.appex || true
+   pluginkit -a /Applications/YamlQuickLook.app/Contents/PlugIns/YamlQuickLookThumbnailExtension.appex || true
+   qlmanage -r
+   qlmanage -r cache
+   ```
+4. Remind users to enable the extension in System Settings > Extensions > Quick Look.
+
 ## Building from Source
 
 ### Prerequisites
 
 - macOS 14.0 or later
 - Xcode 15.0 or later
-- An Apple Developer account (for signing and notarization)
 
 ### Basic Build
 
@@ -72,8 +144,9 @@ xcodebuild -scheme YamlQuickLook -configuration Release \
 # Install
 cp -R build/Build/Products/Release/YamlQuickLook.app /Applications/
 
-# Register extension
+# Register extensions
 pluginkit -a /Applications/YamlQuickLook.app/Contents/PlugIns/YamlQuickLookExtension.appex
+pluginkit -a /Applications/YamlQuickLook.app/Contents/PlugIns/YamlQuickLookThumbnailExtension.appex
 
 # Reset Quick Look
 qlmanage -r && qlmanage -r cache
@@ -113,7 +186,7 @@ xcodebuild -scheme YamlQuickLook \
 ```bash
 # Create a ZIP for notarization
 cd build/Build/Products/Release
-zip -r yamlQuickLook.zip YamlQuickLook.app
+ditto -c -k --keepParent YamlQuickLook.app yamlQuickLook.zip
 
 # Submit for notarization
 xcrun notarytool submit yamlQuickLook.zip \
@@ -131,7 +204,7 @@ xcrun stapler staple YamlQuickLook.app
 ```bash
 # Re-zip with stapled ticket
 VERSION=$(date -u +"%Y.%m.%d")
-zip -r yamlQuickLook-${VERSION}.zip YamlQuickLook.app
+ditto -c -k --keepParent YamlQuickLook.app yamlQuickLook-${VERSION}.zip
 ```
 
 ## Project Structure
@@ -141,16 +214,15 @@ yaml-quicklook/
 ├── YamlQuickLook/                    # Main application (container)
 │   ├── AppDelegate.swift
 │   ├── ContentView.swift
-│   └── Assets.xcassets/
+│   └── yamlQuickLook.icon/
 ├── YamlQuickLookExtension/           # Quick Look preview extension
-│   ├── PreviewProvider.swift
-│   └── YamlQuickLookExtension.entitlements
+│   └── PreviewProvider.swift
 ├── YamlQuickLookThumbnailExtension/  # Thumbnail extension
-│   ├── ThumbnailProvider.swift
-│   └── YamlQuickLookThumbnailExtension.entitlements
+│   └── ThumbnailProvider.swift
 ├── YAMLQuickLook.xcodeproj/
 ├── .github/workflows/
 │   └── release.yml
+├── Makefile
 ├── LICENSE
 └── README.md
 ```
@@ -176,6 +248,18 @@ qlmanage -r && qlmanage -r cache
 killall Finder
 ```
 
+### YAML files not previewing
+
+1. Verify the file has a `.yaml` or `.yml` extension
+2. Check that the file contains valid text (not binary data)
+3. Files larger than 10 MB are truncated in the preview to prevent memory issues
+
+### Build errors
+
+1. Ensure you have Xcode 15.0 or later
+2. Clean build folder (Cmd+Shift+K) and rebuild
+3. Check that macOS deployment target is set to 14.0
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
@@ -184,46 +268,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 Contributions are welcome. Please open an issue or submit a pull request.
 
-To build from command line:
 ```bash
 xcodebuild -project YAMLQuickLook.xcodeproj -scheme YamlQuickLook -configuration Release
 ```
-
-## Customization
-
-The HTML preview can be customized by modifying the CSS styles in `HTMLGenerator.swift`. The styles automatically adapt to light and dark modes.
-
-## Troubleshooting
-
-### Extension not appearing
-1. Make sure you've built and run the main app at least once
-2. Check System Preferences > Privacy & Security > Extensions > Quick Look
-3. Restart Finder: `killall Finder`
-
-### YAML files not previewing
-1. Verify the file has a `.yaml` or `.yml` extension
-2. Check that the file contains valid text (not binary data)
-3. Large files may take longer to process
-
-### Build errors
-1. Ensure you have Xcode 15.0 or later
-2. Clean build folder (⌘+Shift+K) and rebuild
-3. Check that macOS deployment target is set to 14.0
-
-## License
-
-Copyright © 2025 YamlQuickLook. All rights reserved.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
-
-## Changelog
-
-### Version 1.0.0
-- Initial release
-- Basic YAML syntax highlighting
-- Error detection and validation
-- Modern responsive UI design
-- Dark mode support
-- Structure analysis display

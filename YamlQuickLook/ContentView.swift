@@ -22,14 +22,15 @@ struct ContentView: View {
                 Text("Features:")
                     .font(.headline)
                 
-                Label("Syntax highlighting for YAML files", systemImage: "paintbrush.fill")
+                Label("Native plain-text Quick Look preview", systemImage: "eye.fill")
                 Label("Support for .yaml and .yml extensions", systemImage: "doc.fill")
-                Label("Modern, readable preview interface", systemImage: "eye.fill")
-                Label("Error detection and validation", systemImage: "checkmark.shield.fill")
+                Label("Scrollable content for large files", systemImage: "scroll.fill")
+                Label("Thumbnail generation in Finder", systemImage: "photo.fill")
+                Label("Dark mode support", systemImage: "circle.lefthalf.filled")
             }
             .padding()
             .background(Color(.controlBackgroundColor))
-            .cornerRadius(10)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
             
             Text("To use: Select any YAML file in Finder and press Space for Quick Look preview")
                 .font(.callout)
