@@ -112,6 +112,9 @@ build-signed:
 		CODE_SIGN_IDENTITY="$(SIGNING_IDENTITY)" \
 		CODE_SIGN_STYLE=Manual \
 		CODE_SIGNING_REQUIRED=YES \
+		ENABLE_HARDENED_RUNTIME=YES \
+		OTHER_CODE_SIGN_FLAGS="--timestamp" \
+		CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
 		clean build
 	@echo "$(GREEN)Verifying signature...$(NC)"
 	codesign --verify --deep --verbose $(APP_PATH)
