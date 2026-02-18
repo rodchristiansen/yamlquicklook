@@ -30,3 +30,7 @@ xcuserdata/
 Icon?
 ._*
 *.swp
+
+# Local environment — credentials, never committed
+.env
+YamlQuickLook.zip
