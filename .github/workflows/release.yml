@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: macos-15
     
     steps:
     - name: Checkout repository
@@ -31,6 +31,14 @@ jobs:
           CODE_SIGNING_REQUIRED=NO \
           clean build
 
+    - name: Run tests
+      run: |
+        xcodebuild -scheme YamlQuickLook \
+          -derivedDataPath build \
+          CODE_SIGN_IDENTITY="-" \
+          CODE_SIGNING_REQUIRED=NO \
+          test
+
     - name: Create release artifact
       run: |
         cd build/Build/Products/Release
@@ -41,14 +49,17 @@ jobs:
       id: version
       run: |
         VERSION=$(date -u +"%Y.%m.%d")
+        # Append run number to avoid tag collisions on same-day builds
+        TAG="${VERSION}-${GITHUB_RUN_NUMBER}"
         echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Generated version: $VERSION"
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "Generated version: $VERSION (tag: $TAG)"
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ steps.version.outputs.version }}
-        name: YAML Quick Look
+        tag_name: ${{ steps.version.outputs.tag }}
+        name: YAML Quick Look ${{ steps.version.outputs.version }}
         body: |
           A native macOS Quick Look extension for YAML files.
           
