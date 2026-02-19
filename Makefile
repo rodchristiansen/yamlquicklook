@@ -7,7 +7,7 @@ BUILD_DIR   = build/Build/Products/Release
 APP_PATH    = $(BUILD_DIR)/$(APP_NAME).app
 ZIP_FILE    = $(APP_NAME).zip
 
-VERSION := $(shell TZ=America/Vancouver date +'%Y.%m.%d')
+VERSION := $(shell TZ=America/Vancouver date +'%Y.%m.%d.%H%M')
 
 # Load .env if present (never committed — see .env.example)
 -include .env
@@ -27,7 +27,7 @@ NC     = \033[0m
 
 # -----------------------------------------------------------------------
 
-all: build install register reset
+all: release
 
 help:
 	@echo "$(GREEN)YamlQuickLook Build Targets:$(NC)"
@@ -57,6 +57,8 @@ build:
 	xcodebuild -scheme $(SCHEME) \
 		-configuration Release \
 		-derivedDataPath build \
+		MARKETING_VERSION=$(VERSION) \
+		CURRENT_PROJECT_VERSION=$(VERSION) \
 		CODE_SIGN_IDENTITY="-" \
 		CODE_SIGNING_REQUIRED=NO \
 		clean build
@@ -108,6 +110,8 @@ build-signed:
 	xcodebuild -scheme $(SCHEME) \
 		-configuration Release \
 		-derivedDataPath build \
+		MARKETING_VERSION=$(VERSION) \
+		CURRENT_PROJECT_VERSION=$(VERSION) \
 		DEVELOPMENT_TEAM=$(TEAM_ID) \
 		CODE_SIGN_IDENTITY="$(SIGNING_IDENTITY)" \
 		CODE_SIGN_STYLE=Manual \

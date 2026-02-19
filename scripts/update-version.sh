@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Update version to YYYY.MM.DD format at build time
-VERSION=$(date +%Y.%m.%d)
+# Update version to YYYY.MM.DD.HHMM format at build time
+VERSION=$(TZ=America/Vancouver date +'%Y.%m.%d.%H%M')
 
 echo "Updating version to: $VERSION"
 
