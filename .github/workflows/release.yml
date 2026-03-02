@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
     - name: Checkout repository
@@ -37,7 +37,6 @@ jobs:
           -derivedDataPath build \
           CODE_SIGN_IDENTITY="-" \
           CODE_SIGNING_REQUIRED=NO \
-          MACOSX_DEPLOYMENT_TARGET=15.0 \
           test
 
     - name: Build release
