@@ -37,6 +37,7 @@ jobs:
           -derivedDataPath build \
           CODE_SIGN_IDENTITY="-" \
           CODE_SIGNING_REQUIRED=NO \
+          MACOSX_DEPLOYMENT_TARGET=15.0 \
           test
 
     - name: Build release
